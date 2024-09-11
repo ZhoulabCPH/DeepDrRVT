@@ -1,0 +1,31 @@
+## Hyperparameters (Model Training and General Settings)
+seed: 2024                       # Random seed for reproducibility
+start_lr: 1e-3                    # Starting learning rate
+batch_size: 8                     # Number of samples per batch
+start_epoch: 0                    # Epoch to start training from (useful for resuming training)
+Epoch: 50                         # Total number of training epochs
+patchnumbers: 800                 # Number of patches per sample
+Cluster_num: 64                   # Number of clusters for the patch-level representation
+# Feature_dim: 2048               # Dimension of feature vector (commented out)
+Feature_dim: 768                  # Dimension of the feature vector (used for model input)
+workers: 0                        # Number of worker threads for data loading
+bmse: 'bmc'                       # Loss function type ('bmc' in this case)
+init_noise_sigma: 0.1             # Initial noise for sigma in the model
+# initial_checkpoint: './Result/20240309/checkpoint_0_15.pth'  # Previous checkpoint (commented out)
+initial_checkpoint: './Result/checkpoint_4_22.pth'             # Initial checkpoint to resume training
+
+## Loss function options
+weight_decay: 0.0                 # L2 regularization term (weight decay)
+
+## Dataset configuration (CTransPath)
+Feature_Type: "CTransPath"         # Feature extraction method or type (CTransPath in this case)
+Discover_Patient_Train: "Log/Input/train_data.csv"    # Path to training dataset for CTransPath
+Discover_Patient_Test: "Log/Input/test_data.csv"      # Path to testing dataset for CTransPath
+External_Patient: "Log/Input/external_data.csv"       # Path to external validation dataset for CTransPath
+
+Clincial_Patient_BZ: "path_to_clinical_data/BZ_cohort.csv"    # Clinical data for BZ cohort (protected path)
+Clincial_Patient_XH: "path_to_clinical_data/XH_cohort.csv"    # Clinical data for XH cohort (protected path)
+
+## Model configuration (Paths for outputs and results)
+Model_Out: "Result/output/"        # Directory to store model results and checkpoints
+CSV_Out: "Log/Output/"             # Directory to save logs and CSV files (metrics, results, etc.)
