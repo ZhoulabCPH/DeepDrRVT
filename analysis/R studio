@@ -1,0 +1,218 @@
+# Load required libraries
+library(pROC)
+library(PRROC)
+library(boot)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(rmda)
+library(ggDCA)
+library(rms)
+library(caret)
+library(glmnet)
+library(ggExtra)
+library(ggpubr)
+library(Rmisc)
+library(survival)
+library(survminer)
+library(cutoff)
+library(reshape2)
+library(forestplot)
+library(zCompositions)
+library(plyr)
+library(tibble)
+
+# Clean environment and set seed
+rm(list = ls()) 
+set.seed(2024)
+
+# Set working directory (generalized path)
+PATHS_Input <- "path/to/your/data/directory"
+setwd(PATHS_Input)
+
+# 1. ROC Curve Analysis for Train Dataset ---------------------------------
+
+# Load and process data
+Data <- read.csv("Train_Result.csv")[, -1]
+Data$CPR <- ifelse(Data$RVT > 0, "Non-CPR", "CPR")
+Data$MPR <- ifelse(Data$RVT > 0.1, "Non-MPR", "MPR")
+
+# Compute ROC and AUC for CPR and MPR
+roc_cpr <- roc(as.factor(Data$CPR), Data$PreRVT, levels = c("CPR", "Non-CPR"))
+roc_mpr <- roc(as.factor(Data$MPR), Data$PreRVT, levels = c("MPR", "Non-MPR"))
+auc_cpr <- auc(roc_cpr)
+auc_mpr <- auc(roc_mpr)
+
+# Plot ROC with confidence intervals
+CPR_rocobj <- plot.roc(Data$CPR, Data$PreRVT,
+                       main = "Confidence intervals", percent = TRUE,
+                       ci = TRUE, print.auc = TRUE, col = "#457B9D")
+MPR_rocobj <- plot.roc(Data$MPR, Data$PreRVT,
+                       main = "Confidence intervals", percent = TRUE,
+                       ci = TRUE, print.auc = TRUE, col = "#FFC300")
+
+# Confidence intervals for specificities
+CPR_ciobj <- ci.se(CPR_rocobj, specificities = seq(0, 100, 2))
+MPR_ciobj <- ci.se(MPR_rocobj, specificities = seq(0, 100, 2))
+
+# Plot CI regions
+plot(CPR_ciobj, type = "shape")
+plot(MPR_ciobj, type = "shape")
+abline(h = seq(0, 100, by = 20), v = seq(0, 100, by = 20), col = "gray", lty = "solid")
+legend("bottomright", legend = c(paste("CPR AUC:", round(auc_cpr, 4)), 
+                                 paste("MPR AUC:", round(auc_mpr, 4))), 
+       col = c("#457B9D", "#FFC300"), lwd = 2)
+
+
+# 2. Density Plot for Different Datasets -----------------------------------
+
+# Load data from multiple datasets
+data_train <- read.csv("Train_Result.csv")  
+data_test <- read.csv("Test_Result.csv")  
+data_external <- read.csv("External_Result.csv")  
+
+# Create density plot function
+create_density_plot <- function(data, dataset_name) {
+  RVT <- data$RVT
+  PreRVT <- data$PreRVT
+  RVT_group <- ifelse(RVT > 0.0, "CPR-", "CPR+")
+  
+  df <- data.frame(RVT_group, PreRVT)
+  p <- ggplot(df, aes(x = PreRVT, fill = RVT_group)) +
+    geom_density(alpha = 0.6, bw = 0.12, adjust = 1) +
+    scale_fill_manual(values = c("CPR+" = "#ff7f0e", "CPR-" = "#1f77b4")) +
+    labs(
+      title = paste("Density Plot of PreRVT -", dataset_name),
+      x = "PreRVT", y = "Density"
+    ) +
+    theme_minimal() +
+    theme(
+      text = element_text(size = 12),
+      plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+      legend.title = element_text(size = 12),
+      legend.text = element_text(size = 10),
+      panel.grid.minor = element_blank(),
+      axis.title = element_text(size = 12),
+      axis.text = element_text(size = 10)
+    )
+  
+  return(p)
+}
+
+# Generate density plots for different datasets
+plot1 <- create_density_plot(data_train, "Train")
+
+
+# 3. Decision Curve Analysis -----------------------------------------------
+
+# Set working directory (generalized)
+setwd("path/to/your/working/directory")
+
+# Load data
+Train_ <- read.csv('Train.csv', fileEncoding = "UTF-8")
+Train_$DFSTime <- Train_$DFSTime / 12.0
+Test_ <- read.csv('Test.csv', fileEncoding = "UTF-8")
+Test_$DFSTime <- Test_$DFSTime / 12.0
+External_ <- read.csv('External.csv', fileEncoding = "UTF-8")
+External_$DFSTime <- External_$DFSTime / 12.0
+
+# Decision Curve for Train Data
+data_Orial <- Train_
+Cutoffs = 0.0
+data_Orial$label <- ifelse(data_Orial$RVT > Cutoffs, 0, 1)
+
+# Fit baseline model and plot decision curve
+baseline.model <- decision_curve(label ~ PreRVT,
+                                 data = data_Orial,
+                                 thresholds = seq(0, 1.0, by = 0.005),
+                                 study.design = 'cohort',
+                                 bootstraps = 10,
+                                 family = "binomial",
+                                 confidence.intervals = TRUE)
+
+plot_decision_curve(baseline.model,  
+                    curve.names = "Baseline Model",
+                    cost.benefit.axis = FALSE,
+                    col = c('red', 'blue'),
+                    confidence.intervals = FALSE,
+                    standardize = FALSE,
+                    xlim = c(0, 0.6),
+                    ylim = c(0, 0.08),
+                    lwd = 2,
+                    lty = 1)
+
+
+# 4. Scatter Plot with Correlation -----------------------------------------
+
+# Load and process data
+setwd("path/to/your/data/directory")
+df <- read.csv('Train_Result.csv', fileEncoding = "UTF-8")
+
+# Scatter plot with correlation (Spearman and Pearson)
+p1 <- ggscatter(df, x = "RVT", y = "PreRVT",
+                add = "reg.line", conf.int = TRUE, 
+                add.params = list(color = "black", fill = "#BBBDBE"),
+                color = "#79BCC4", size = 5) +
+  stat_cor(method = "spearman", label.y = max(df$PreRVT) * 0.9, size = 6) +
+  stat_cor(method = "pearson", label.y = max(df$PreRVT) * 0.8, size = 6, aes(label = paste(..r.label.., sep = ""))) +
+  stat_regline_equation(label.y = max(df$PreRVT) * 0.7, size = 6)
+
+
+# 5. Kaplan-Meier Survival Analysis ----------------------------------------
+
+# Kaplan-Meier Plot Function
+KaplanMeier_Plot <- function(PD, Y_labels, titles) {
+  fit <- survfit(Surv(DFSTime, DFS) ~ Pre_Label, data = PD)
+  
+  P0 <- ggsurvplot(
+    fit = fit,
+    title = titles,
+    risk.table = TRUE, 
+    risk.table.col = "strata",
+    ggtheme = theme_classic(),
+    palette = c("#1E3070", "#AE1E24"),
+    pval = TRUE,
+    pval.method = TRUE,
+    ylab = Y_labels,
+    xlab = " Time (Years)",
+    tables.theme = theme_cleantable(),
+    tables.height = 0.25,
+    font.x = c(8, "plain", "black"),
+    font.y = c(8, "plain", "black"),
+    font.tickslab = c(8, "plain", "black"),
+    ylim = c(0, 1),
+    size = 0.5,
+    censor.size = 6
+  )
+  
+  res_cox <- coxph(Surv(DFSTime, DFS) ~ Pre_Label, data = PD)
+  
+  P0$plot <- P0$plot + 
+    annotate("text", x = 3.5, y = 0.12, label = paste("HR:", round(summary(res_cox)$conf.int[1], 4))) + 
+    annotate("text", x = 3.5, y = 0.05, label = paste("(", "95%CI:", round(summary(res_cox)$conf.int[3], 4), "-", round(summary(res_cox)$conf.int[4], 4), ")", sep = ""))
+  
+  return(P0)
+}
+
+# Load datasets
+setwd("path/to/your/data/directory")
+Train_Dig <- read.csv('Train.csv', fileEncoding = "UTF-8")
+Train_Dig$DFSTime <- Train_Dig$DFSTime / 12.0
+
+Test_Dig <- read.csv('Test.csv', fileEncoding = "UTF-8")
+Test_Dig$DFSTime <- Test_Dig$DFSTime / 12.0
+
+External_Dig <- read.csv('External.csv', fileEncoding = "UTF-8")
+External_Dig$DFSTime <- External_Dig$DFSTime / 12.0
+
+# Define cutoff and label
+Cutoffs <- 0.19349837
+Train_Dig$Prelabel <- ifelse(Train_Dig$PreRVT <= Cutoffs, "MPR-Yes", "MPR-No")
+Train_Dig$Pre_Label <- factor(Train_Dig$Prelabel, levels = c("MPR-No", "MPR-Yes"))
+
+# Generate Kaplan-Meier plot for train dataset
+Y_labels <- "Disease-free survival"
+titles <- "Train cohort"
+PD <- Train_Dig
+P1 <- KaplanMeier_Plot(PD, Y_labels, titles)
+P1
